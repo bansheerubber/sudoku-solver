@@ -1,0 +1,205 @@
+use std::collections::{HashMap, HashSet};
+
+use crate::{column::Column, row::Row, square::Square};
+
+pub type CellValue = u8;
+pub type Coord = u8;
+
+#[derive(Clone, Default)]
+pub struct Grid {
+	pub candidates: HashMap<(Coord, Coord), Vec<CellValue>>,
+	pub columns: [Column; 9],
+	pub original_numbers: HashSet<(Coord, Coord)>,
+	pub rows: [Row; 9],
+	pub squares: [Square; 9],
+	pub invalid_cells: Vec<(Coord, Coord)>,
+	pub solution: HashMap<(Coord, Coord), CellValue>,
+}
+
+impl Grid {
+	pub fn new() -> Self {
+		let mut grid = Grid::default();
+
+		for row in 0..9 {
+			grid.rows[row] = Row::new(row as u8);
+		}
+
+		for column in 0..9 {
+			grid.columns[column] = Column::new(column as u8);
+		}
+
+		for x in 0..3 {
+			for y in 0..3 {
+				grid.squares[Square::coord_to_index(x, y)] = Square::new(x, y);
+			}
+		}
+
+		for x in 0..3 {
+			for y in 0..3 {
+				let square = grid
+					.squares
+					.get_mut(Square::coord_to_index(x, y))
+					.expect("Could not get square");
+
+				let mut index = 0;
+				for i in (x * 3)..(x * 3 + 3) {
+					square.rows[index] = i as usize;
+					index += 1;
+				}
+
+				let mut index = 0;
+				for i in (y * 3)..(y * 3 + 3) {
+					square.columns[index] = i as usize;
+					index += 1;
+				}
+			}
+		}
+
+		return grid;
+	}
+
+	pub fn load(&mut self) {
+		let lines = std::fs::read_to_string("./puzzle3.txt").expect("Could not read puzzle");
+		let lines = lines.split("\n");
+
+		let mut x = 0;
+		let mut y = 0;
+
+		let mut load_solution = false;
+		for line in lines {
+			if line.trim().len() == 0 {
+				load_solution = true;
+				x = 0;
+				y = 0;
+				continue;
+			}
+
+			for char in line.trim().chars() {
+				if char != '_' {
+					let number = char
+						.to_string()
+						.parse::<CellValue>()
+						.expect("Could not parse number");
+
+					if load_solution {
+						self.solution.insert((x, y), number);
+					} else {
+						self.insert_number(x, y, number);
+						self.original_numbers.insert((x, y));
+					}
+				}
+
+				x += 1;
+			}
+
+			x = 0;
+			y += 1;
+		}
+	}
+
+	pub fn has_number(&self, x: Coord, y: Coord) -> bool {
+		self.rows[y as usize].get_number(x) != 0
+	}
+
+	pub fn insert_number(&mut self, x: Coord, y: Coord, number: CellValue) {
+		let square = &mut self.squares[Square::coord_to_index(x / 3, y / 3)];
+		square.cells.insert(number);
+
+		let row = &mut self.rows[y as usize];
+		let column = &mut self.columns[x as usize];
+
+		row.set_number(x, number);
+		column.set_number(y, number);
+
+		self.candidates.entry((x, y)).or_default().clear();
+
+		for &(x, y) in row.coords() {
+			self.candidates
+				.entry((x, y))
+				.or_default()
+				.retain(|&n| n != number);
+		}
+
+		for &(x, y) in column.coords() {
+			self.candidates
+				.entry((x, y))
+				.or_default()
+				.retain(|&n| n != number);
+		}
+
+		for &(x, y) in square.coords() {
+			self.candidates
+				.entry((x, y))
+				.or_default()
+				.retain(|&n| n != number);
+		}
+	}
+
+	pub fn verify_data_structure(&self) {
+		for x in 0..9 {
+			for y in 0..9 {
+				let square = &self.squares[Square::coord_to_index(x / 3, y / 3)];
+				let number = self.get_number(x, y);
+				if number == 0 {
+					continue;
+				}
+
+				assert!(square.cells.contains(&number), "({}, {}): {}", x, y, number);
+			}
+		}
+	}
+
+	pub fn verify(&mut self) -> bool {
+		for row in 0..9 {
+			let x = self.rows[row].verify();
+			if x != 0 {
+				self.invalid_cells.push((x, row as u8));
+				return false;
+			}
+		}
+
+		for column in 0..9 {
+			let y = self.columns[column].verify();
+			if y != 0 {
+				self.invalid_cells.push((column as u8, y));
+				return false;
+			}
+		}
+
+		for x in 0..9 {
+			for y in 0..9 {
+				if !self.has_number(x, y) && self.candidates.entry((x, y)).or_default().len() == 0 {
+					return false;
+				}
+			}
+		}
+
+		return true;
+	}
+
+	pub fn get_number(&self, x: Coord, y: Coord) -> CellValue {
+		let row = self.rows[y as usize].get_number(x);
+		let column = self.columns[x as usize].get_number(y);
+		assert!(row == column);
+		return row;
+	}
+
+	pub fn calculate_candidates(&mut self, x: Coord, y: Coord) {
+		let row = &self.rows[y as usize];
+		let column = &self.columns[x as usize];
+		let square = &self.squares[Square::coord_to_index(x / 3, y / 3)];
+
+		let mut candidates = vec![];
+
+		for candidate in 1..=9 {
+			if !row.has_number(candidate)
+				&& !column.has_number(candidate)
+				&& !square.has_number(candidate)
+			{
+				candidates.push(candidate);
+			}
+		}
+
+		self.candidates.entry((x, y)).or_insert(candidates);
+	}
+}
