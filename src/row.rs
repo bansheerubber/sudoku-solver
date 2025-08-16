@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{cell::Cell, collections::HashSet};
 
 use crate::{
 	grid::{CellValue, Coord},
@@ -9,6 +9,7 @@ use crate::{
 pub struct Row {
 	pub mini_rows: [MiniRow; 3],
 	coords: Vec<(Coord, Coord)>,
+	pub row: Coord,
 }
 
 impl Row {
@@ -24,7 +25,7 @@ impl Row {
 			coords.push((x, row));
 		}
 
-		Row { mini_rows, coords }
+		Row { mini_rows, coords, row }
 	}
 
 	pub fn has_number(&self, number: CellValue) -> bool {
@@ -49,6 +50,26 @@ impl Row {
 
 	pub fn coords(&self) -> impl Iterator<Item = &(Coord, Coord)> {
 		self.coords.iter()
+	}
+
+	pub fn add_candidate(&mut self, x: Coord, number: CellValue) {
+		self.mini_rows[x as usize / 3].add_candidate(x as usize % 3, number);
+	}
+
+	pub fn set_candidates(&mut self, x: Coord, candidates: Vec<CellValue>) {
+		self.mini_rows[x as usize / 3].set_candidates(x as usize % 3, candidates);
+	}
+
+	pub fn remove_candidate(&mut self, x: Coord, number: CellValue) -> bool {
+		self.mini_rows[x as usize / 3].remove_candidate(x as usize % 3, number)
+	}
+
+	pub fn clear_candidates(&mut self, x: Coord) {
+		self.mini_rows[x as usize / 3].clear_candidates(x as usize % 3);
+	}
+
+	pub fn get_candidates(&self, x: Coord) -> &Vec<CellValue> {
+		self.mini_rows[x as usize / 3].get_candidates(x as usize % 3)
 	}
 
 	pub fn verify(&self) -> Coord {

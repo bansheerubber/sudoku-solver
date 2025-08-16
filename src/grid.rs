@@ -7,7 +7,6 @@ pub type Coord = u8;
 
 #[derive(Clone, Default)]
 pub struct Grid {
-	pub candidates: HashMap<(Coord, Coord), Vec<CellValue>>,
 	pub columns: [Column; 9],
 	pub original_numbers: HashSet<(Coord, Coord)>,
 	pub rows: [Row; 9],
@@ -111,27 +110,23 @@ impl Grid {
 		row.set_number(x, number);
 		column.set_number(y, number);
 
-		self.candidates.entry((x, y)).or_default().clear();
-
-		for &(x, y) in row.coords() {
-			self.candidates
-				.entry((x, y))
-				.or_default()
-				.retain(|&n| n != number);
-		}
-
-		for &(x, y) in column.coords() {
-			self.candidates
-				.entry((x, y))
-				.or_default()
-				.retain(|&n| n != number);
-		}
+		row.clear_candidates(x);
+		column.clear_candidates(y);
 
 		for &(x, y) in square.coords() {
-			self.candidates
-				.entry((x, y))
-				.or_default()
-				.retain(|&n| n != number);
+			let row = &mut self.rows[y as usize];
+			let column = &mut self.columns[x as usize];
+
+			row.remove_candidate(x, number);
+			column.remove_candidate(y, number);
+		}
+
+		for x in 0..9 {
+			self.remove_candidate(x, y, number);
+		}
+
+		for y in 0..9 {
+			self.remove_candidate(x, y, number);
 		}
 	}
 
@@ -168,7 +163,7 @@ impl Grid {
 
 		for x in 0..9 {
 			for y in 0..9 {
-				if !self.has_number(x, y) && self.candidates.entry((x, y)).or_default().len() == 0 {
+				if !self.has_number(x, y) && self.get_candidates(x, y).len() == 0 {
 					return false;
 				}
 			}
@@ -178,10 +173,41 @@ impl Grid {
 	}
 
 	pub fn get_number(&self, x: Coord, y: Coord) -> CellValue {
-		let row = self.rows[y as usize].get_number(x);
-		let column = self.columns[x as usize].get_number(y);
-		assert!(row == column);
-		return row;
+		let row_number = self.rows[y as usize].get_number(x);
+		let column_number = self.columns[x as usize].get_number(y);
+		assert!(row_number == column_number);
+		return row_number;
+	}
+
+	pub fn add_candidate(&mut self, x: Coord, y: Coord, number: CellValue) {
+		self.rows[y as usize].add_candidate(x, number);
+		self.columns[x as usize].add_candidate(y, number);
+	}
+
+	pub fn set_candidates(&mut self, x: Coord, y: Coord, candidates: Vec<CellValue>) {
+		self.rows[y as usize].set_candidates(x, candidates.clone());
+		self.columns[x as usize].set_candidates(y, candidates);
+	}
+
+	pub fn remove_candidate(&mut self, x: Coord, y: Coord, number: CellValue) -> bool {
+		self.columns[x as usize].remove_candidate(y, number);
+		return self.rows[y as usize].remove_candidate(x, number)
+	}
+
+	pub fn get_candidates(&self, x: Coord, y: Coord) -> &Vec<CellValue> {
+		let row_candidates = self.rows[y as usize].get_candidates(x);
+		let column_candidates = self.columns[x as usize].get_candidates(y);
+
+		assert!(
+			row_candidates == column_candidates,
+			"({}, {}): {:?} != {:?}",
+			x,
+			y,
+			row_candidates,
+			column_candidates
+		);
+
+		return row_candidates;
 	}
 
 	pub fn calculate_candidates(&mut self, x: Coord, y: Coord) {
@@ -200,6 +226,6 @@ impl Grid {
 			}
 		}
 
-		self.candidates.entry((x, y)).or_insert(candidates);
+		self.set_candidates(x, y, candidates);
 	}
 }

@@ -11,7 +11,7 @@ pub struct Analysis<'a> {
 	pub grid: &'a mut Grid,
 }
 
-pub const DEBUG: bool = true;
+pub const DEBUG: bool = false;
 
 impl<'a> Analysis<'a> {
 	pub fn new(grid: &'a mut Grid, cheating: bool) -> Self {
@@ -37,7 +37,13 @@ impl<'a> Analysis<'a> {
 			numbers_inserted += 1;
 		}
 
-		// self.square_claim();
+		if self.square_claim_rows() {
+			numbers_inserted += 1;
+		}
+
+		if self.square_claim_columns() {
+			numbers_inserted += 1;
+		}
 
 		if self.cheating && numbers_inserted == 0 && self.cheat() {
 			return 0;
@@ -51,7 +57,6 @@ impl<'a> Analysis<'a> {
 	}
 
 	pub fn calculate_all_candidates(&mut self) {
-		self.grid.candidates = Default::default();
 		for x in 0..9 {
 			for y in 0..9 {
 				if !self.grid.has_number(x, y) {
@@ -71,10 +76,10 @@ impl<'a> Analysis<'a> {
 					continue;
 				}
 
-				let candidates = &self.grid.candidates[&(x, y)];
+				let candidates = &self.grid.get_candidates(x, y);
 				let square_index = Square::coord_to_index(x / 3, y / 3);
 
-				for candidate in candidates {
+				for candidate in candidates.iter() {
 					counts
 						.entry(square_index as SquareIndex)
 						.or_default()
@@ -99,9 +104,13 @@ impl<'a> Analysis<'a> {
 
 	pub fn lonely_cells(&self) -> Vec<((Coord, Coord), CellValue)> {
 		let mut results = vec![];
-		for ((x, y), candidates) in self.grid.candidates.iter() {
-			if candidates.len() == 1 {
-				results.push(((*x, *y), candidates[0]));
+
+		for x in 0..9 {
+			for y in 0..9 {
+				let candidates = self.grid.get_candidates(x, y);
+				if candidates.len() == 1 {
+					results.push(((x, y), candidates[0]));
+				}
 			}
 		}
 
@@ -123,13 +132,7 @@ impl<'a> Analysis<'a> {
 
 				for y2 in y * 3..y * 3 + 3 {
 					for x2 in x * 3..x * 3 + 3 {
-						for &candidate in self
-							.grid
-							.candidates
-							.get(&(x2, y2))
-							.unwrap_or(&vec![])
-							.iter()
-						{
+						for &candidate in self.grid.get_candidates(x2, y2).iter() {
 							candidate_rows
 								.entry(square_index as u8)
 								.or_default()
@@ -160,6 +163,8 @@ impl<'a> Analysis<'a> {
 							continue;
 						}
 
+						let mut candidates_to_remove = vec![];
+
 						let row_index = *set.iter().nth(0).unwrap();
 						let row = &self.grid.rows[row_index as usize];
 						for &(row_x, row_y) in row.coords() {
@@ -183,12 +188,16 @@ impl<'a> Analysis<'a> {
 								continue;
 							}
 
-							let candidates =
-								self.grid.candidates.entry((row_x, row_y)).or_default();
+							candidates_to_remove.push(((row_x, row_y), candidate));
+						}
 
+						for &((x, y), candidate) in candidates_to_remove.iter() {
+							let candidates = self.grid.get_candidates(x, y);
 							let start = candidates.len();
-							candidates.retain(|&c| c != candidate);
 
+							self.grid.remove_candidate(x, y, candidate);
+
+							let candidates = self.grid.get_candidates(x, y);
 							if start != candidates.len() {
 								changes_made = true;
 							}
@@ -201,6 +210,8 @@ impl<'a> Analysis<'a> {
 						if set.len() != 1 || set.len() == 0 {
 							continue;
 						}
+
+						let mut candidates_to_remove = vec![];
 
 						let column_index = *set.iter().nth(0).unwrap();
 						let column = &self.grid.columns[column_index as usize];
@@ -225,15 +236,16 @@ impl<'a> Analysis<'a> {
 								continue;
 							}
 
-							let candidates = self
-								.grid
-								.candidates
-								.entry((column_x, column_y))
-								.or_default();
+							candidates_to_remove.push(((column_x, column_y), candidate));
+						}
 
+						for &((x, y), candidate) in candidates_to_remove.iter() {
+							let candidates = self.grid.get_candidates(x, y);
 							let start = candidates.len();
-							candidates.retain(|&c| c != candidate);
 
+							self.grid.remove_candidate(x, y, candidate);
+
+							let candidates = self.grid.get_candidates(x, y);
 							if start != candidates.len() {
 								changes_made = true;
 							}
@@ -246,25 +258,105 @@ impl<'a> Analysis<'a> {
 		return changes_made;
 	}
 
-	/*pub fn square_claim(&mut self) {
-		for square in self.grid.squares.iter() {
-			let mut only_in_row: HashMap<CellValue, HashSet<u8>> = HashMap::new();
+	pub fn square_claim_rows(&mut self) -> bool {
+		let mut exclusives: HashMap<(Coord, CellValue), u8> = HashMap::new();
 
-			for row in square.y * 3..square.y * 3 + 3 {
-				println!("{}", row);
+		for row in self.grid.rows.iter() {
+			for number in 1..=9 {
+				for mini_row in row.mini_rows.iter() {
+					if !mini_row.has_candidate_anywhere(number) {
+						continue;
+					}
 
-				for x in square.x * 3..square.x * 3 + 3 {
-					for &candidate in self.grid.candidates.entry((x, row)).or_default().iter() {
-						only_in_row.entry(candidate).or_default().push(row);
+					if let Some(square_x) = exclusives.get(&(row.row, number))
+						&& *square_x != mini_row.square_x
+					{
+						exclusives.insert((row.row, number), 4);
+					} else {
+						exclusives.insert((row.row, number), mini_row.square_x);
 					}
 				}
 			}
-
-			println!("{:#?}", only_in_row);
-
-			std::process::exit(0);
 		}
-	}*/
+
+		let mut changes_made = false;
+
+		for (&(row, number), &square_x) in exclusives.iter() {
+			if square_x == 4 {
+				continue;
+			}
+
+			let start_row = (row / 3) * 3;
+			let end_row = start_row + 3;
+
+			for i in start_row..end_row {
+				if i == row {
+					continue;
+				}
+
+				for candidate_index in 0..3 {
+					if self
+						.grid
+						.remove_candidate(square_x * 3 + candidate_index, i, number)
+					{
+						changes_made = true;
+					}
+				}
+			}
+		}
+
+		return changes_made;
+	}
+
+	pub fn square_claim_columns(&mut self) -> bool {
+		let mut exclusives: HashMap<(Coord, CellValue), u8> = HashMap::new();
+
+		for column in self.grid.columns.iter() {
+			for number in 1..=9 {
+				for mini_column in column.mini_columns.iter() {
+					if !mini_column.has_candidate_anywhere(number) {
+						continue;
+					}
+
+					if let Some(square_x) = exclusives.get(&(column.column, number))
+						&& *square_x != mini_column.square_y
+					{
+						exclusives.insert((column.column, number), 4);
+					} else {
+						exclusives.insert((column.column, number), mini_column.square_y);
+					}
+				}
+			}
+		}
+
+		let mut changes_made = false;
+
+		for (&(column, number), &square_y) in exclusives.iter() {
+			if square_y == 4 {
+				continue;
+			}
+
+			let start_column = (column / 3) * 3;
+			let end_column = start_column + 3;
+
+			for i in start_column..end_column {
+				if i == column {
+					continue;
+				}
+
+				for candidate_index in 0..3 {
+					if self
+						.grid
+						.remove_candidate(i, square_y * 3 + candidate_index, number)
+					{
+						changes_made = true;
+					}
+				}
+			}
+		}
+
+		return changes_made;
+	}
 
 	pub fn cheat(&mut self) -> bool {
 		let mut best_square = &self.grid.squares[0];
@@ -280,7 +372,7 @@ impl<'a> Analysis<'a> {
 		let mut candidates = vec![];
 
 		for &(x, y) in best_square.coords() {
-			let candidates2 = self.grid.candidates.entry((x, y)).or_default();
+			let candidates2 = self.grid.get_candidates(x, y);
 			if candidates2.len() != 0 {
 				candidate_coords = (x, y);
 				candidates = candidates2.clone();
@@ -302,16 +394,20 @@ impl<'a> Analysis<'a> {
 		for mut grid in grids.iter_mut() {
 			let mut analysis = Analysis::new(&mut grid, self.cheating);
 			while analysis.round() != 0 && analysis.verify() {
+				if DEBUG {
+					analysis.draw();
+
+					let mut string = String::new();
+					std::io::stdin().read_line(&mut string).unwrap();
+				}
+			}
+
+			if DEBUG {
 				analysis.draw();
 
 				let mut string = String::new();
 				std::io::stdin().read_line(&mut string).unwrap();
 			}
-
-			analysis.draw();
-
-			let mut string = String::new();
-			std::io::stdin().read_line(&mut string).unwrap();
 		}
 
 		return true;

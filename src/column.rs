@@ -9,6 +9,7 @@ use crate::{
 pub struct Column {
 	pub mini_columns: [MiniColumn; 3],
 	coords: Vec<(Coord, Coord)>,
+	pub column: Coord,
 }
 
 impl Column {
@@ -27,6 +28,7 @@ impl Column {
 		Column {
 			mini_columns,
 			coords,
+			column,
 		}
 	}
 
@@ -52,6 +54,26 @@ impl Column {
 
 	pub fn coords(&self) -> impl Iterator<Item = &(Coord, Coord)> {
 		self.coords.iter()
+	}
+
+	pub fn add_candidate(&mut self, y: Coord, number: CellValue) {
+		self.mini_columns[y as usize / 3].add_candidate(y as usize % 3, number);
+	}
+
+	pub fn set_candidates(&mut self, y: Coord, candidates: Vec<CellValue>) {
+		self.mini_columns[y as usize / 3].set_candidates(y as usize % 3, candidates);
+	}
+
+	pub fn remove_candidate(&mut self, y: Coord, number: CellValue) -> bool {
+		self.mini_columns[y as usize / 3].remove_candidate(y as usize % 3, number)
+	}
+
+	pub fn clear_candidates(&mut self, y: Coord) {
+		self.mini_columns[y as usize / 3].clear_candidates(y as usize % 3);
+	}
+
+	pub fn get_candidates(&self, y: Coord) -> &Vec<CellValue> {
+		self.mini_columns[y as usize / 3].get_candidates(y as usize % 3)
 	}
 
 	pub fn verify(&self) -> Coord {

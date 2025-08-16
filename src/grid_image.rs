@@ -1,5 +1,5 @@
 use ab_glyph::{FontRef, PxScale};
-use image::{imageops::invert, Rgb, RgbImage};
+use image::{Rgb, RgbImage};
 use imageproc::{
 	drawing::{draw_filled_rect_mut, draw_text_mut},
 	rect::Rect,
@@ -148,9 +148,11 @@ impl<'a> GridImage<'a> {
 	}
 
 	pub fn draw_candidates(&mut self) {
-		for ((x, y), candidates) in self.grid.candidates.iter() {
-			for candidate in candidates {
-				self.draw_candidate(*x, *y, *candidate);
+		for x in 0..9 {
+			for y in 0..9 {
+				for candidate in self.grid.get_candidates(x, y).iter() {
+					self.draw_candidate(x, y, *candidate);
+				}
 			}
 		}
 	}

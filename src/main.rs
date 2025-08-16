@@ -14,7 +14,7 @@ fn main() {
 	grid.load();
 	grid.verify_data_structure();
 
-	let mut analysis = analysis::Analysis::new(&mut grid, true);
+	let mut analysis = analysis::Analysis::new(&mut grid, false);
 	analysis.calculate_all_candidates();
 
 	if DEBUG {
