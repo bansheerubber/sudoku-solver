@@ -1,18 +1,22 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{column::Column, row::Row, square::Square};
+use crate::{
+	line::{Line, LineDirection},
+	square::Square,
+	vec2::Vec2,
+};
 
 pub type CellValue = u8;
 pub type Coord = u8;
 
 #[derive(Clone, Default)]
 pub struct Grid {
-	pub columns: [Column; 9],
-	pub original_numbers: HashSet<(Coord, Coord)>,
-	pub rows: [Row; 9],
+	pub columns: [Line; 9],
+	pub original_numbers: HashSet<Vec2>,
+	pub rows: [Line; 9],
 	pub squares: [Square; 9],
-	pub invalid_cells: Vec<(Coord, Coord)>,
-	pub solution: HashMap<(Coord, Coord), CellValue>,
+	pub invalid_cells: Vec<Vec2>,
+	pub solution: HashMap<Vec2, CellValue>,
 }
 
 impl Grid {
@@ -20,16 +24,16 @@ impl Grid {
 		let mut grid = Grid::default();
 
 		for row in 0..9 {
-			grid.rows[row] = Row::new(row as u8);
+			grid.rows[row] = Line::new(Vec2::new(0, row as Coord), LineDirection::Row);
 		}
 
 		for column in 0..9 {
-			grid.columns[column] = Column::new(column as u8);
+			grid.columns[column] = Line::new(Vec2::new(column as Coord, 0), LineDirection::Column);
 		}
 
 		for x in 0..3 {
 			for y in 0..3 {
-				grid.squares[Square::coord_to_index(x, y)] = Square::new(x, y);
+				grid.squares[Square::square_coord_to_index(x, y)] = Square::new(x, y);
 			}
 		}
 
@@ -37,7 +41,7 @@ impl Grid {
 			for y in 0..3 {
 				let square = grid
 					.squares
-					.get_mut(Square::coord_to_index(x, y))
+					.get_mut(Square::square_coord_to_index(x, y))
 					.expect("Could not get square");
 
 				let mut index = 0;
@@ -58,7 +62,7 @@ impl Grid {
 	}
 
 	pub fn load(&mut self) {
-		let lines = std::fs::read_to_string("./puzzle3.txt").expect("Could not read puzzle");
+		let lines = std::fs::read_to_string("./puzzle1.txt").expect("Could not read puzzle");
 		let lines = lines.split("\n");
 
 		let mut x = 0;
@@ -81,10 +85,10 @@ impl Grid {
 						.expect("Could not parse number");
 
 					if load_solution {
-						self.solution.insert((x, y), number);
+						self.solution.insert(Vec2::new(x, y), number);
 					} else {
-						self.insert_number(x, y, number);
-						self.original_numbers.insert((x, y));
+						self.insert_number(&Vec2::new(x, y), number);
+						self.original_numbers.insert(Vec2::new(x, y));
 					}
 				}
 
@@ -96,45 +100,45 @@ impl Grid {
 		}
 	}
 
-	pub fn has_number(&self, x: Coord, y: Coord) -> bool {
-		self.rows[y as usize].get_number(x) != 0
+	pub fn has_number(&self, point: &Vec2) -> bool {
+		self.rows[point.y as usize].get_number(point) != 0
 	}
 
-	pub fn insert_number(&mut self, x: Coord, y: Coord, number: CellValue) {
-		let square = &mut self.squares[Square::coord_to_index(x / 3, y / 3)];
+	pub fn insert_number(&mut self, point: &Vec2, number: CellValue) {
+		let square = &mut self.squares[Square::square_coord_to_index(point.x / 3, point.y / 3)];
 		square.cells.insert(number);
 
-		let row = &mut self.rows[y as usize];
-		let column = &mut self.columns[x as usize];
+		let row = &mut self.rows[point.y as usize];
+		let column = &mut self.columns[point.x as usize];
 
-		row.set_number(x, number);
-		column.set_number(y, number);
+		row.set_number(point, number);
+		column.set_number(point, number);
 
-		row.clear_candidates(x);
-		column.clear_candidates(y);
+		row.clear_candidates(point);
+		column.clear_candidates(point);
 
-		for &(x, y) in square.coords() {
-			let row = &mut self.rows[y as usize];
-			let column = &mut self.columns[x as usize];
+		for point in square.coords() {
+			let row = &mut self.rows[point.y as usize];
+			let column = &mut self.columns[point.x as usize];
 
-			row.remove_candidate(x, number);
-			column.remove_candidate(y, number);
+			row.remove_candidate(point, number);
+			column.remove_candidate(point, number);
 		}
 
 		for x in 0..9 {
-			self.remove_candidate(x, y, number);
+			self.remove_candidate(&Vec2::new(x, point.y), number);
 		}
 
 		for y in 0..9 {
-			self.remove_candidate(x, y, number);
+			self.remove_candidate(&Vec2::new(point.x, y), number);
 		}
 	}
 
 	pub fn verify_data_structure(&self) {
 		for x in 0..9 {
 			for y in 0..9 {
-				let square = &self.squares[Square::coord_to_index(x / 3, y / 3)];
-				let number = self.get_number(x, y);
+				let square = &self.squares[Square::square_coord_to_index(x / 3, y / 3)];
+				let number = self.get_number(&Vec2::new(x, y));
 				if number == 0 {
 					continue;
 				}
@@ -145,64 +149,60 @@ impl Grid {
 	}
 
 	pub fn verify(&mut self) -> bool {
-		for row in 0..9 {
-			let x = self.rows[row].verify();
-			if x != 0 {
-				self.invalid_cells.push((x, row as u8));
-				return false;
+		let mut valid = true;
+
+		for row in self.rows.iter() {
+			if let Some(invalid_point) = row.verify() {
+				self.invalid_cells.push(invalid_point);
+				valid = false;
 			}
 		}
 
-		for column in 0..9 {
-			let y = self.columns[column].verify();
-			if y != 0 {
-				self.invalid_cells.push((column as u8, y));
-				return false;
+		for column in self.columns.iter() {
+			if let Some(invalid_point) = column.verify() {
+				self.invalid_cells.push(invalid_point);
+				valid = false;
 			}
 		}
 
 		for x in 0..9 {
 			for y in 0..9 {
-				if !self.has_number(x, y) && self.get_candidates(x, y).len() == 0 {
+				if !self.has_number(&Vec2::new(x, y))
+					&& self.get_candidates(&Vec2::new(x, y)).len() == 0
+				{
 					return false;
 				}
 			}
 		}
 
-		return true;
+		return valid;
 	}
 
-	pub fn get_number(&self, x: Coord, y: Coord) -> CellValue {
-		let row_number = self.rows[y as usize].get_number(x);
-		let column_number = self.columns[x as usize].get_number(y);
+	pub fn get_number(&self, point: &Vec2) -> CellValue {
+		let row_number = self.rows[point.y as usize].get_number(point);
+		let column_number = self.columns[point.x as usize].get_number(point);
 		assert!(row_number == column_number);
 		return row_number;
 	}
 
-	pub fn add_candidate(&mut self, x: Coord, y: Coord, number: CellValue) {
-		self.rows[y as usize].add_candidate(x, number);
-		self.columns[x as usize].add_candidate(y, number);
+	pub fn set_candidates(&mut self, point: &Vec2, candidates: Vec<CellValue>) {
+		self.rows[point.y as usize].set_candidates(point, candidates.clone());
+		self.columns[point.x as usize].set_candidates(point, candidates);
 	}
 
-	pub fn set_candidates(&mut self, x: Coord, y: Coord, candidates: Vec<CellValue>) {
-		self.rows[y as usize].set_candidates(x, candidates.clone());
-		self.columns[x as usize].set_candidates(y, candidates);
+	pub fn remove_candidate(&mut self, point: &Vec2, number: CellValue) -> bool {
+		self.columns[point.x as usize].remove_candidate(point, number);
+		return self.rows[point.y as usize].remove_candidate(point, number);
 	}
 
-	pub fn remove_candidate(&mut self, x: Coord, y: Coord, number: CellValue) -> bool {
-		self.columns[x as usize].remove_candidate(y, number);
-		return self.rows[y as usize].remove_candidate(x, number)
-	}
-
-	pub fn get_candidates(&self, x: Coord, y: Coord) -> &Vec<CellValue> {
-		let row_candidates = self.rows[y as usize].get_candidates(x);
-		let column_candidates = self.columns[x as usize].get_candidates(y);
+	pub fn get_candidates(&self, point: &Vec2) -> &Vec<CellValue> {
+		let row_candidates = self.rows[point.y as usize].get_candidates(point);
+		let column_candidates = self.columns[point.x as usize].get_candidates(point);
 
 		assert!(
 			row_candidates == column_candidates,
-			"({}, {}): {:?} != {:?}",
-			x,
-			y,
+			"{}: {:?} != {:?}",
+			point,
 			row_candidates,
 			column_candidates
 		);
@@ -210,10 +210,10 @@ impl Grid {
 		return row_candidates;
 	}
 
-	pub fn calculate_candidates(&mut self, x: Coord, y: Coord) {
-		let row = &self.rows[y as usize];
-		let column = &self.columns[x as usize];
-		let square = &self.squares[Square::coord_to_index(x / 3, y / 3)];
+	pub fn calculate_candidates(&mut self, point: &Vec2) {
+		let row = &self.rows[point.y as usize];
+		let column = &self.columns[point.x as usize];
+		let square = &self.squares[Square::square_coord_to_index(point.x / 3, point.y / 3)];
 
 		let mut candidates = vec![];
 
@@ -226,6 +226,6 @@ impl Grid {
 			}
 		}
 
-		self.set_candidates(x, y, candidates);
+		self.set_candidates(point, candidates);
 	}
 }

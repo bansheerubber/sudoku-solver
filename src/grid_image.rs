@@ -5,7 +5,10 @@ use imageproc::{
 	rect::Rect,
 };
 
-use crate::grid::Grid;
+use crate::{
+	grid::Grid,
+	vec2::{Vec2, SUDOKU},
+};
 
 pub struct GridImage<'a> {
 	font: FontRef<'a>,
@@ -61,38 +64,36 @@ impl<'a> GridImage<'a> {
 			Rgb([255u8, 255u8, 255u8]),
 		);
 
-		for x in 0..9 {
-			for y in 0..9 {
-				let number = self.grid.get_number(x, y);
-				if number == 0 {
-					continue;
-				}
-
-				let color = if self.grid.original_numbers.contains(&(x, y)) {
-					Rgb([0u8, 0u8, 0u8])
-				} else if self.grid.invalid_cells.contains(&(x, y)) {
-					Rgb([200u8, 30u8, 30u8])
-				} else if self.grid.solution.len() != 0
-					&& *self.grid.solution.get(&(x, y)).unwrap() != number
-				{
-					Rgb([200u8, 100u8, 30u8])
-				} else {
-					Rgb([30u8, 200u8, 30u8])
-				};
-
-				draw_text_mut(
-					&mut self.image,
-					color,
-					x as i32 * self.cell_size + x_adjust,
-					y as i32 * self.cell_size + y_adjust,
-					PxScale {
-						x: self.cell_size as f32,
-						y: self.cell_size as f32,
-					},
-					&self.font,
-					&format!("{}", number),
-				);
+		for point in SUDOKU.iter() {
+			let number = self.grid.get_number(point);
+			if number == 0 {
+				continue;
 			}
+
+			let color = if self.grid.original_numbers.contains(point) {
+				Rgb([0u8, 0u8, 0u8])
+			} else if self.grid.invalid_cells.contains(point) {
+				Rgb([200u8, 30u8, 30u8])
+			} else if self.grid.solution.len() != 0
+				&& *self.grid.solution.get(point).unwrap() != number
+			{
+				Rgb([200u8, 100u8, 30u8])
+			} else {
+				Rgb([30u8, 200u8, 30u8])
+			};
+
+			draw_text_mut(
+				&mut self.image,
+				color,
+				point.x as i32 * self.cell_size + x_adjust,
+				point.y as i32 * self.cell_size + y_adjust,
+				PxScale {
+					x: self.cell_size as f32,
+					y: self.cell_size as f32,
+				},
+				&self.font,
+				&format!("{}", number),
+			);
 		}
 
 		for y in 1..9 {
@@ -128,7 +129,7 @@ impl<'a> GridImage<'a> {
 		}
 	}
 
-	fn draw_candidate(&mut self, x: u8, y: u8, number: u8) {
+	fn draw_candidate(&mut self, point: &Vec2, number: u8) {
 		let font_size = 20;
 
 		let (x_offset, y_offset) = OFFSETS[number as usize - 1];
@@ -136,8 +137,8 @@ impl<'a> GridImage<'a> {
 		draw_text_mut(
 			&mut self.image,
 			Rgb([30u8, 30u8, 30u8]),
-			x as i32 * self.cell_size + x_offset,
-			y as i32 * self.cell_size + y_offset,
+			point.x as i32 * self.cell_size + x_offset,
+			point.y as i32 * self.cell_size + y_offset,
 			PxScale {
 				x: font_size as f32,
 				y: font_size as f32,
@@ -148,11 +149,9 @@ impl<'a> GridImage<'a> {
 	}
 
 	pub fn draw_candidates(&mut self) {
-		for x in 0..9 {
-			for y in 0..9 {
-				for candidate in self.grid.get_candidates(x, y).iter() {
-					self.draw_candidate(x, y, *candidate);
-				}
+		for point in SUDOKU.iter() {
+			for candidate in self.grid.get_candidates(point).iter() {
+				self.draw_candidate(point, *candidate);
 			}
 		}
 	}

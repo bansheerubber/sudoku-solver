@@ -4,6 +4,7 @@ use crate::{
 	grid::{CellValue, Coord, Grid},
 	grid_image::GridImage,
 	square::{Square, SquareIndex},
+	vec2::{Vec2, SUDOKU},
 };
 
 pub struct Analysis<'a> {
@@ -11,7 +12,7 @@ pub struct Analysis<'a> {
 	pub grid: &'a mut Grid,
 }
 
-pub const DEBUG: bool = false;
+pub const DEBUG: bool = true;
 
 impl<'a> Analysis<'a> {
 	pub fn new(grid: &'a mut Grid, cheating: bool) -> Self {
@@ -22,14 +23,14 @@ impl<'a> Analysis<'a> {
 		let mut numbers_inserted = 0;
 
 		let answers = self.single_in_squares();
-		for ((x, y), answer) in answers {
-			self.grid.insert_number(x, y, answer);
+		for (point, answer) in answers {
+			self.grid.insert_number(&point, answer);
 			numbers_inserted += 1;
 		}
 
 		let answers = self.lonely_cells();
-		for ((x, y), answer) in answers {
-			self.grid.insert_number(x, y, answer);
+		for (point, answer) in answers {
+			self.grid.insert_number(&point, answer);
 			numbers_inserted += 1;
 		}
 
@@ -57,36 +58,31 @@ impl<'a> Analysis<'a> {
 	}
 
 	pub fn calculate_all_candidates(&mut self) {
-		for x in 0..9 {
-			for y in 0..9 {
-				if !self.grid.has_number(x, y) {
-					self.grid.calculate_candidates(x, y);
-				}
+		for point in SUDOKU.iter() {
+			if !self.grid.has_number(point) {
+				self.grid.calculate_candidates(point);
 			}
 		}
 	}
 
-	pub fn single_in_squares(&self) -> Vec<((Coord, Coord), CellValue)> {
-		let mut counts: HashMap<SquareIndex, HashMap<CellValue, Vec<(Coord, Coord)>>> =
-			HashMap::new();
+	pub fn single_in_squares(&self) -> Vec<(Vec2, CellValue)> {
+		let mut counts: HashMap<SquareIndex, HashMap<CellValue, Vec<Vec2>>> = HashMap::new();
 
-		for x in 0..9 {
-			for y in 0..9 {
-				if self.grid.has_number(x, y) {
-					continue;
-				}
+		for point in SUDOKU.iter() {
+			if self.grid.has_number(point) {
+				continue;
+			}
 
-				let candidates = &self.grid.get_candidates(x, y);
-				let square_index = Square::coord_to_index(x / 3, y / 3);
+			let candidates = &self.grid.get_candidates(point);
+			let square_index = Square::point_to_index(point);
 
-				for candidate in candidates.iter() {
-					counts
-						.entry(square_index as SquareIndex)
-						.or_default()
-						.entry(*candidate)
-						.or_default()
-						.push((x, y));
-				}
+			for candidate in candidates.iter() {
+				counts
+					.entry(square_index as SquareIndex)
+					.or_default()
+					.entry(*candidate)
+					.or_default()
+					.push(*point);
 			}
 		}
 
@@ -102,15 +98,13 @@ impl<'a> Analysis<'a> {
 		return results;
 	}
 
-	pub fn lonely_cells(&self) -> Vec<((Coord, Coord), CellValue)> {
+	pub fn lonely_cells(&self) -> Vec<(Vec2, CellValue)> {
 		let mut results = vec![];
 
-		for x in 0..9 {
-			for y in 0..9 {
-				let candidates = self.grid.get_candidates(x, y);
-				if candidates.len() == 1 {
-					results.push(((x, y), candidates[0]));
-				}
+		for point in SUDOKU.iter() {
+			let candidates = self.grid.get_candidates(point);
+			if candidates.len() == 1 {
+				results.push((*point, candidates[0]));
 			}
 		}
 
@@ -128,11 +122,11 @@ impl<'a> Analysis<'a> {
 
 		for x in 0..3 {
 			for y in 0..3 {
-				let square_index = Square::coord_to_index(x, y);
+				let square_index = Square::square_coord_to_index(x, y);
 
 				for y2 in y * 3..y * 3 + 3 {
 					for x2 in x * 3..x * 3 + 3 {
-						for &candidate in self.grid.get_candidates(x2, y2).iter() {
+						for &candidate in self.grid.get_candidates(&Vec2::new(x2, y2)).iter() {
 							candidate_rows
 								.entry(square_index as u8)
 								.or_default()
@@ -155,7 +149,7 @@ impl<'a> Analysis<'a> {
 		// TODO this sucks!!!!!
 		for x in 0..3 {
 			for y in 0..3 {
-				let square_index = Square::coord_to_index(x, y) as u8;
+				let square_index = Square::square_coord_to_index(x, y) as u8;
 
 				if let Some(cell_rows) = candidate_rows.get(&square_index) {
 					for (&candidate, set) in cell_rows.iter() {
@@ -167,13 +161,12 @@ impl<'a> Analysis<'a> {
 
 						let row_index = *set.iter().nth(0).unwrap();
 						let row = &self.grid.rows[row_index as usize];
-						for &(row_x, row_y) in row.coords() {
-							if row_x >= x * 3 && row_x < x * 3 + 3 {
+						for point in row.coords() {
+							if point.x >= x * 3 && point.y < x * 3 + 3 {
 								continue;
 							}
 
-							let adjacent_square_index =
-								Square::coord_to_index(row_x / 3, row_y / 3) as u8;
+							let adjacent_square_index = Square::point_to_index(point) as u8;
 
 							let Some(candidate_map) = candidate_rows.get(&adjacent_square_index)
 							else {
@@ -188,16 +181,16 @@ impl<'a> Analysis<'a> {
 								continue;
 							}
 
-							candidates_to_remove.push(((row_x, row_y), candidate));
+							candidates_to_remove.push((*point, candidate));
 						}
 
-						for &((x, y), candidate) in candidates_to_remove.iter() {
-							let candidates = self.grid.get_candidates(x, y);
+						for &(point, candidate) in candidates_to_remove.iter() {
+							let candidates = self.grid.get_candidates(&point);
 							let start = candidates.len();
 
-							self.grid.remove_candidate(x, y, candidate);
+							self.grid.remove_candidate(&point, candidate);
 
-							let candidates = self.grid.get_candidates(x, y);
+							let candidates = self.grid.get_candidates(&point);
 							if start != candidates.len() {
 								changes_made = true;
 							}
@@ -215,13 +208,12 @@ impl<'a> Analysis<'a> {
 
 						let column_index = *set.iter().nth(0).unwrap();
 						let column = &self.grid.columns[column_index as usize];
-						for &(column_x, column_y) in column.coords() {
-							if column_x >= x * 3 && column_x < x * 3 + 3 {
+						for point in column.coords() {
+							if point.x >= x * 3 && point.y < x * 3 + 3 {
 								continue;
 							}
 
-							let adjacent_square_index =
-								Square::coord_to_index(column_x / 3, column_y / 3) as u8;
+							let adjacent_square_index = Square::point_to_index(point) as u8;
 
 							let Some(candidate_map) = candidate_columns.get(&adjacent_square_index)
 							else {
@@ -236,16 +228,16 @@ impl<'a> Analysis<'a> {
 								continue;
 							}
 
-							candidates_to_remove.push(((column_x, column_y), candidate));
+							candidates_to_remove.push((*point, candidate));
 						}
 
-						for &((x, y), candidate) in candidates_to_remove.iter() {
-							let candidates = self.grid.get_candidates(x, y);
+						for &(point, candidate) in candidates_to_remove.iter() {
+							let candidates = self.grid.get_candidates(&point);
 							let start = candidates.len();
 
-							self.grid.remove_candidate(x, y, candidate);
+							self.grid.remove_candidate(&point, candidate);
 
-							let candidates = self.grid.get_candidates(x, y);
+							let candidates = self.grid.get_candidates(&point);
 							if start != candidates.len() {
 								changes_made = true;
 							}
@@ -263,17 +255,17 @@ impl<'a> Analysis<'a> {
 
 		for row in self.grid.rows.iter() {
 			for number in 1..=9 {
-				for mini_row in row.mini_rows.iter() {
-					if !mini_row.has_candidate_anywhere(number) {
+				for mini_line in row.mini_lines.iter() {
+					if !mini_line.has_candidate_anywhere(number) {
 						continue;
 					}
 
-					if let Some(square_x) = exclusives.get(&(row.row, number))
-						&& *square_x != mini_row.square_x
+					if let Some(square_x) = exclusives.get(&(row.rank(), number))
+						&& *square_x != mini_line.square_point.x
 					{
-						exclusives.insert((row.row, number), 4);
+						exclusives.insert((row.rank(), number), 4);
 					} else {
-						exclusives.insert((row.row, number), mini_row.square_x);
+						exclusives.insert((row.rank(), number), mini_line.square_point.x);
 					}
 				}
 			}
@@ -297,7 +289,7 @@ impl<'a> Analysis<'a> {
 				for candidate_index in 0..3 {
 					if self
 						.grid
-						.remove_candidate(square_x * 3 + candidate_index, i, number)
+						.remove_candidate(&Vec2::new(square_x * 3 + candidate_index, i), number)
 					{
 						changes_made = true;
 					}
@@ -313,17 +305,17 @@ impl<'a> Analysis<'a> {
 
 		for column in self.grid.columns.iter() {
 			for number in 1..=9 {
-				for mini_column in column.mini_columns.iter() {
-					if !mini_column.has_candidate_anywhere(number) {
+				for mini_line in column.mini_lines.iter() {
+					if !mini_line.has_candidate_anywhere(number) {
 						continue;
 					}
 
-					if let Some(square_x) = exclusives.get(&(column.column, number))
-						&& *square_x != mini_column.square_y
+					if let Some(square_x) = exclusives.get(&(column.rank(), number))
+						&& *square_x != mini_line.square_point.y
 					{
-						exclusives.insert((column.column, number), 4);
+						exclusives.insert((column.rank(), number), 4);
 					} else {
-						exclusives.insert((column.column, number), mini_column.square_y);
+						exclusives.insert((column.rank(), number), mini_line.square_point.y);
 					}
 				}
 			}
@@ -347,7 +339,7 @@ impl<'a> Analysis<'a> {
 				for candidate_index in 0..3 {
 					if self
 						.grid
-						.remove_candidate(i, square_y * 3 + candidate_index, number)
+						.remove_candidate(&Vec2::new(i, square_y * 3 + candidate_index), number)
 					{
 						changes_made = true;
 					}
@@ -368,13 +360,13 @@ impl<'a> Analysis<'a> {
 			}
 		}
 
-		let mut candidate_coords = (0, 0);
+		let mut candidate_coords = Vec2::new(0, 0);
 		let mut candidates = vec![];
 
-		for &(x, y) in best_square.coords() {
-			let candidates2 = self.grid.get_candidates(x, y);
+		for point in best_square.coords() {
+			let candidates2 = self.grid.get_candidates(point);
 			if candidates2.len() != 0 {
-				candidate_coords = (x, y);
+				candidate_coords = *point;
 				candidates = candidates2.clone();
 				break;
 			}
@@ -382,11 +374,9 @@ impl<'a> Analysis<'a> {
 
 		let mut grids = vec![];
 
-		let (x, y) = candidate_coords;
-
 		for &candidate in candidates.iter() {
 			let mut new_grid = self.grid.clone();
-			new_grid.insert_number(x, y, candidate);
+			new_grid.insert_number(&candidate_coords, candidate);
 
 			grids.push(new_grid);
 		}

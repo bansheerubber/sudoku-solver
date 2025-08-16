@@ -1,4 +1,4 @@
-use std::{cell::Cell, collections::HashSet};
+use std::collections::HashSet;
 
 use crate::{
 	grid::{CellValue, Coord},
@@ -25,7 +25,11 @@ impl Row {
 			coords.push((x, row));
 		}
 
-		Row { mini_rows, coords, row }
+		Row {
+			mini_rows,
+			coords,
+			row,
+		}
 	}
 
 	pub fn has_number(&self, number: CellValue) -> bool {

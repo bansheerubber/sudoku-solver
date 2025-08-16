@@ -1,13 +1,12 @@
 use crate::analysis::DEBUG;
 
 mod analysis;
-mod column;
 mod grid;
 mod grid_image;
-mod mini_column;
-mod mini_row;
-mod row;
+mod line;
+mod mini_line;
 mod square;
+mod vec2;
 
 fn main() {
 	let mut grid = grid::Grid::new();
