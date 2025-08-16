@@ -109,13 +109,10 @@ impl<'a> Analysis<'a> {
 	}
 
 	pub fn single_line_in_squares(&mut self) -> bool {
-		let mut changes_made = false;
-
-		let mut candidate_rows: HashMap<SquareIndex, HashMap<CellValue, HashSet<Coord>>> =
-			HashMap::new();
-
-		let mut candidate_columns: HashMap<SquareIndex, HashMap<CellValue, HashSet<Coord>>> =
-			HashMap::new();
+		let mut single_line_candidates: HashMap<
+			usize,
+			HashMap<(LineDirection, CellValue), HashSet<Coord>>,
+		> = HashMap::new();
 
 		for x in 0..3 {
 			for y in 0..3 {
@@ -124,17 +121,17 @@ impl<'a> Analysis<'a> {
 				for y2 in y * 3..y * 3 + 3 {
 					for x2 in x * 3..x * 3 + 3 {
 						for &candidate in self.grid.get_candidates(&Vec2::new(x2, y2)).iter() {
-							candidate_rows
-								.entry(square_index as u8)
+							single_line_candidates
+								.entry(square_index)
 								.or_default()
-								.entry(candidate)
+								.entry((LineDirection::Row, candidate))
 								.or_default()
 								.insert(y2);
 
-							candidate_columns
-								.entry(square_index as u8)
+							single_line_candidates
+								.entry(square_index)
 								.or_default()
-								.entry(candidate)
+								.entry((LineDirection::Column, candidate))
 								.or_default()
 								.insert(x2);
 						}
@@ -143,104 +140,70 @@ impl<'a> Analysis<'a> {
 			}
 		}
 
-		// TODO this sucks!!!!!
-		for x in 0..3 {
-			for y in 0..3 {
-				let square_index = Square::square_coord_to_index(x, y) as u8;
+		let mut changes_made = false;
+		let mut candidates_to_remove = vec![];
 
-				if let Some(cell_rows) = candidate_rows.get(&square_index) {
-					for (&candidate, set) in cell_rows.iter() {
-						if set.len() != 1 || set.len() == 0 {
-							continue;
-						}
+		for square in self.grid.squares.iter() {
+			let square_index = Square::square_coord_to_index(square.x, square.y);
+			let Some(single_line_candidates_for_square) = single_line_candidates.get(&square_index)
+			else {
+				continue;
+			};
 
-						let mut candidates_to_remove = vec![];
+			for (&(direction, candidate), set) in single_line_candidates_for_square.iter() {
+				if set.len() != 1 || set.len() == 0 {
+					continue;
+				}
 
-						let row_index = *set.iter().nth(0).unwrap();
-						let row = &self.grid.rows[row_index as usize];
-						for point in row.coords() {
-							if point.x >= x * 3 && point.y < x * 3 + 3 {
+				let rank = *set.iter().nth(0).unwrap() as usize;
+				let line = match direction {
+					LineDirection::Row => &self.grid.rows[rank],
+					LineDirection::Column => &self.grid.columns[rank],
+				};
+
+				for point in line.coords() {
+					match direction {
+						LineDirection::Row => {
+							if point.x >= square.x * 3 && point.x < square.x * 3 + 3 {
 								continue;
 							}
-
-							let adjacent_square_index = Square::point_to_index(point) as u8;
-
-							let Some(candidate_map) = candidate_rows.get(&adjacent_square_index)
-							else {
-								continue;
-							};
-
-							let Some(row_set) = candidate_map.get(&candidate) else {
-								continue;
-							};
-
-							if row_set.len() <= 1 {
-								continue;
-							}
-
-							candidates_to_remove.push((*point, candidate));
 						}
-
-						for &(point, candidate) in candidates_to_remove.iter() {
-							let candidates = self.grid.get_candidates(&point);
-							let start = candidates.len();
-
-							self.grid.remove_candidate(&point, candidate);
-
-							let candidates = self.grid.get_candidates(&point);
-							if start != candidates.len() {
-								changes_made = true;
+						LineDirection::Column => {
+							if point.y >= square.y * 3 && point.y < square.y * 3 + 3 {
+								continue;
 							}
 						}
 					}
-				}
 
-				if let Some(cell_columns) = candidate_columns.get(&square_index) {
-					for (&candidate, set) in cell_columns.iter() {
-						if set.len() != 1 || set.len() == 0 {
-							continue;
-						}
+					let adjacent_square_index = Square::point_to_index(point);
 
-						let mut candidates_to_remove = vec![];
+					let Some(candidate_map) = single_line_candidates.get(&adjacent_square_index)
+					else {
+						continue;
+					};
 
-						let column_index = *set.iter().nth(0).unwrap();
-						let column = &self.grid.columns[column_index as usize];
-						for point in column.coords() {
-							if point.x >= x * 3 && point.y < x * 3 + 3 {
-								continue;
-							}
+					let Some(row_set) = candidate_map.get(&(direction, candidate)) else {
+						continue;
+					};
 
-							let adjacent_square_index = Square::point_to_index(point) as u8;
-
-							let Some(candidate_map) = candidate_columns.get(&adjacent_square_index)
-							else {
-								continue;
-							};
-
-							let Some(column_set) = candidate_map.get(&candidate) else {
-								continue;
-							};
-
-							if column_set.len() <= 1 {
-								continue;
-							}
-
-							candidates_to_remove.push((*point, candidate));
-						}
-
-						for &(point, candidate) in candidates_to_remove.iter() {
-							let candidates = self.grid.get_candidates(&point);
-							let start = candidates.len();
-
-							self.grid.remove_candidate(&point, candidate);
-
-							let candidates = self.grid.get_candidates(&point);
-							if start != candidates.len() {
-								changes_made = true;
-							}
-						}
+					if row_set.len() <= 1 {
+						continue;
 					}
+
+					candidates_to_remove.push((*point, candidate));
 				}
+			}
+		}
+
+		for &(point, candidate) in candidates_to_remove.iter() {
+			let candidates = self.grid.get_candidates(&point);
+			let start = candidates.len();
+
+			self.grid.remove_candidate(&point, candidate);
+
+			let candidates = self.grid.get_candidates(&point);
+			if start != candidates.len() {
+				changes_made = true;
 			}
 		}
 

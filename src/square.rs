@@ -13,6 +13,8 @@ pub struct Square {
 	pub columns: [usize; 3],
 	pub coords: Vec<Vec2>,
 	pub rows: [usize; 3],
+	pub x: Coord,
+	pub y: Coord,
 }
 
 impl Square {
@@ -29,6 +31,8 @@ impl Square {
 			columns: Default::default(),
 			coords,
 			rows: Default::default(),
+			x,
+			y,
 		}
 	}
 
