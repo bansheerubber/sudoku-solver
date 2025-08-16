@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{
 	grid::{CellValue, Coord, Grid},
 	grid_image::GridImage,
+	line::LineDirection,
 	square::{Square, SquareIndex},
 	vec2::{Vec2, SUDOKU},
 };
@@ -38,11 +39,7 @@ impl<'a> Analysis<'a> {
 			numbers_inserted += 1;
 		}
 
-		if self.square_claim_rows() {
-			numbers_inserted += 1;
-		}
-
-		if self.square_claim_columns() {
+		if self.square_claim() {
 			numbers_inserted += 1;
 		}
 
@@ -250,22 +247,29 @@ impl<'a> Analysis<'a> {
 		return changes_made;
 	}
 
-	pub fn square_claim_rows(&mut self) -> bool {
-		let mut exclusives: HashMap<(Coord, CellValue), u8> = HashMap::new();
+	pub fn square_claim(&mut self) -> bool {
+		let mut exclusives = HashMap::new();
 
-		for row in self.grid.rows.iter() {
+		for line in self.grid.lines() {
 			for number in 1..=9 {
-				for mini_line in row.mini_lines.iter() {
+				for mini_line in line.mini_lines.iter() {
 					if !mini_line.has_candidate_anywhere(number) {
 						continue;
 					}
 
-					if let Some(square_x) = exclusives.get(&(row.rank(), number))
-						&& *square_x != mini_line.square_point.x
+					if let Some(square_rank) =
+						exclusives.get(&(line.rank(), line.direction, number))
 					{
-						exclusives.insert((row.rank(), number), 4);
+						if let Some(square_rank) = square_rank
+							&& *square_rank != mini_line.square_rank()
+						{
+							exclusives.insert((line.rank(), line.direction, number), None);
+						}
 					} else {
-						exclusives.insert((row.rank(), number), mini_line.square_point.x);
+						exclusives.insert(
+							(line.rank(), line.direction, number),
+							Some(mini_line.square_rank()),
+						);
 					}
 				}
 			}
@@ -273,74 +277,26 @@ impl<'a> Analysis<'a> {
 
 		let mut changes_made = false;
 
-		for (&(row, number), &square_x) in exclusives.iter() {
-			if square_x == 4 {
+		for ((rank, direction, number), square_rank) in exclusives {
+			let Some(square_rank) = square_rank else {
 				continue;
-			}
+			};
 
-			let start_row = (row / 3) * 3;
-			let end_row = start_row + 3;
+			let start_rank = (rank / 3) * 3;
+			let end_rank = start_rank + 3;
 
-			for i in start_row..end_row {
-				if i == row {
+			for i in start_rank..end_rank {
+				if i == rank {
 					continue;
 				}
 
 				for candidate_index in 0..3 {
-					if self
-						.grid
-						.remove_candidate(&Vec2::new(square_x * 3 + candidate_index, i), number)
-					{
-						changes_made = true;
-					}
-				}
-			}
-		}
+					let point = match direction {
+						LineDirection::Row => Vec2::new(square_rank * 3 + candidate_index, i),
+						LineDirection::Column => Vec2::new(i, square_rank * 3 + candidate_index),
+					};
 
-		return changes_made;
-	}
-
-	pub fn square_claim_columns(&mut self) -> bool {
-		let mut exclusives: HashMap<(Coord, CellValue), u8> = HashMap::new();
-
-		for column in self.grid.columns.iter() {
-			for number in 1..=9 {
-				for mini_line in column.mini_lines.iter() {
-					if !mini_line.has_candidate_anywhere(number) {
-						continue;
-					}
-
-					if let Some(square_x) = exclusives.get(&(column.rank(), number))
-						&& *square_x != mini_line.square_point.y
-					{
-						exclusives.insert((column.rank(), number), 4);
-					} else {
-						exclusives.insert((column.rank(), number), mini_line.square_point.y);
-					}
-				}
-			}
-		}
-
-		let mut changes_made = false;
-
-		for (&(column, number), &square_y) in exclusives.iter() {
-			if square_y == 4 {
-				continue;
-			}
-
-			let start_column = (column / 3) * 3;
-			let end_column = start_column + 3;
-
-			for i in start_column..end_column {
-				if i == column {
-					continue;
-				}
-
-				for candidate_index in 0..3 {
-					if self
-						.grid
-						.remove_candidate(&Vec2::new(i, square_y * 3 + candidate_index), number)
-					{
+					if self.grid.remove_candidate(&point, number) {
 						changes_made = true;
 					}
 				}

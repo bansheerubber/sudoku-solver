@@ -1,17 +1,23 @@
-use crate::{grid::CellValue, vec2::Vec2};
+use crate::{
+	grid::{CellValue, Coord},
+	line::LineDirection,
+	vec2::Vec2,
+};
 
 #[derive(Clone, Debug, Default)]
 pub struct MiniLine {
 	pub cells: [CellValue; 3],
+	pub direction: LineDirection,
 	pub point: Vec2,
 	pub square_point: Vec2,
 	candidates: [Vec<CellValue>; 3],
 }
 
 impl MiniLine {
-	pub fn new(point: Vec2) -> Self {
+	pub fn new(point: Vec2, direction: LineDirection) -> Self {
 		MiniLine {
 			cells: [0; 3],
+			direction,
 			point,
 			square_point: Vec2::new(point.x / 3, point.y / 3),
 			candidates: Default::default(),
@@ -50,5 +56,12 @@ impl MiniLine {
 		}
 
 		return false;
+	}
+
+	pub fn square_rank(&self) -> Coord {
+		match self.direction {
+			LineDirection::Row => self.square_point.x,
+			LineDirection::Column => self.square_point.y,
+		}
 	}
 }

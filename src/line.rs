@@ -6,7 +6,7 @@ use crate::{
 	vec2::Vec2,
 };
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub enum LineDirection {
 	#[default]
 	Row,
@@ -65,7 +65,7 @@ impl Line {
 				LineDirection::Column => Vec2::new(point.x, square_coord.y * 3),
 			};
 
-			mini_lines[index] = MiniLine::new(start);
+			mini_lines[index] = MiniLine::new(start, direction);
 
 			index += 1;
 		}

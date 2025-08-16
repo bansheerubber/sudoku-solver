@@ -62,7 +62,7 @@ impl Grid {
 	}
 
 	pub fn load(&mut self) {
-		let lines = std::fs::read_to_string("./puzzle1.txt").expect("Could not read puzzle");
+		let lines = std::fs::read_to_string("./puzzle3.txt").expect("Could not read puzzle");
 		let lines = lines.split("\n");
 
 		let mut x = 0;
@@ -227,5 +227,19 @@ impl Grid {
 		}
 
 		self.set_candidates(point, candidates);
+	}
+
+	pub fn lines(&self) -> Vec<&Line> {
+		let mut result = vec![];
+
+		for row in self.rows.iter() {
+			result.push(row);
+		}
+
+		for column in self.columns.iter() {
+			result.push(column);
+		}
+
+		return result;
 	}
 }
